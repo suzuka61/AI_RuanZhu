@@ -148,28 +148,36 @@ function makeImagePara(imgObj, caption) {
 }
 
 // ── 页眉页脚工具 ──────────────────────────────────────────────────────────
-// 参考文档结构：页眉左侧软件名+右侧页码，页脚为空
+// 页眉：左侧软件名，右侧"第x页 共x页"
 function makeDocHeader(titleText) {
-  const { Header, Paragraph, TextRun } = require('docx');
+  const { Header, Paragraph, TextRun, TabStopPosition, TabStopType, PageNumber } = require('docx');
 
-  // 最简单的页眉：只有软件名称
   return new Header({
     children: [
       new Paragraph({
+        tabStops: [
+          { type: TabStopType.RIGHT, position: TabStopPosition.MAX }
+        ],
         children: [
           new TextRun({ 
             text: titleText, 
-            size: 20, 
+            size: 18, 
             font: '宋体'
-          })
+          }),
+          new TextRun({ text: '\t', size: 18, font: '宋体' }),
+          new TextRun({ text: '第', size: 18, font: '宋体' }),
+          new TextRun({ children: [PageNumber.CURRENT], size: 18, font: '宋体' }),
+          new TextRun({ text: '页 共', size: 18, font: '宋体' }),
+          new TextRun({ children: [PageNumber.TOTAL_PAGES], size: 18, font: '宋体' }),
+          new TextRun({ text: '页', size: 18, font: '宋体' }),
         ]
       })
     ]
   });
 }
 
-// 页脚为空（参考文档结构）
-function makeDocFooter() {
+// 页脚为空（不使用页脚）
+function makeEmptyFooter() {
   const { Footer, Paragraph } = require('docx');
   return new Footer({
     children: [new Paragraph({ children: [] })]
@@ -179,8 +187,12 @@ function makeDocFooter() {
 function makeEmptyHeaderFooter() {
   const { Header, Footer, Paragraph } = require('docx');
   return {
-    header: new Header({ children: [new Paragraph({ children: [] })] }),
-    footer: new Footer({ children: [new Paragraph({ children: [] })] }),
+    header: new Header({ 
+      children: [new Paragraph({ children: [] })] 
+    }),
+    footer: new Footer({ 
+      children: [new Paragraph({ children: [] })] 
+    }),
   };
 }
 
@@ -283,24 +295,15 @@ async function buildOverviewDocx(data) {
   }
 
   const doc = new Document({
-    sections: [
-      {
-        properties: {
-          ...pageProps,
-          headers: { ["default"]: emptyHF.header },
-          footers: { ["default"]: emptyHF.footer },
-        },
-        children: coverChildren,
-      },
-      {
-        properties: {
-          ...pageProps,
-          headers: { default: makeDocHeader(softwareName) },
-          footers: { default: makeDocFooter() },
-        },
-        children: bodyChildren,
-      },
-    ]
+    sections: [{
+      properties: { ...pageProps },
+      headers: { default: makeDocHeader(softwareName) },
+      children: [
+        ...coverChildren,
+        new Paragraph({ children: [new PageBreak()] }),
+        ...bodyChildren,
+      ],
+    }]
   });
   return Packer.toBuffer(doc);
 }
@@ -403,6 +406,7 @@ async function buildDesignDocx(data) {
     }
 
     const wireframePhs = placeholders.filter(ph => ph.type === '[WIREFRAME]');
+    let wireframeIndex = 0;
 
     // 策略 1：首先尝试通过标题相似度匹配图片和占位符
     for (const ph of wireframePhs) {
@@ -531,50 +535,6 @@ async function buildDesignDocx(data) {
   const docHeader = makeDocHeader(softwareName);
   console.log('[调试] 设计说明书页眉创建成功:', softwareName);
 
-  // ── 修复：从AI生成内容提取目录（清理markdown符号，放宽识别规则）──
-  function generateTocFromContent(content) {
-    const lines = (content || '').split('\n');
-    const tocItems = [];
-    
-    for (const line of lines) {
-      const trimmed = line.trim();
-      
-      // 清理 markdown 加粗、斜体、代码格式
-      const cleanTitle = (t) => t.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').trim();
-      
-      // 识别 ## 一级标题（对应 Heading2，outlineLevel: 1）
-      if (/^##\s/.test(trimmed) && !/^###/.test(trimmed)) {
-        const title = cleanTitle(trimmed.replace(/^##\s*/, ''));
-        if (title && !title.includes('目录')) {
-          tocItems.push({ level: 2, title }); // level: 2 对应 Heading2
-        }
-      }
-      // 识别 ### 二级标题（对应 Heading3，outlineLevel: 2）
-      else if (/^###\s/.test(trimmed)) {
-        const title = cleanTitle(trimmed.replace(/^###\s*/, ''));
-        if (title) {
-          tocItems.push({ level: 3, title }); // level: 3 对应 Heading3
-        }
-      }
-    }
-    
-    console.log('[调试] 目录提取结果:', tocItems.map(t => t.title));
-    return tocItems;
-  }
-
-  const tocItems = generateTocFromContent(aiContent);
-
-  // 去重：确保目录中没有重复的标题
-  const seenTitles = new Set();
-  const uniqueTocItems = [];
-  for (const item of tocItems) {
-    const key = item.level + '|' + item.title;
-    if (!seenTitles.has(key)) {
-      seenTitles.add(key);
-      uniqueTocItems.push(item);
-    }
-  }
-
   // 封面内容
   const coverChildren = [
     new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 3000, after: 600 }, children: [new TextRun({ text: softwareName, bold: true, size: 48, font: '宋体' })] }),
@@ -583,29 +543,42 @@ async function buildDesignDocx(data) {
     new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 200 }, children: [new TextRun({ text: info.completion_date||'', size: 24, font: '宋体' })] }),
   ];
 
-  // 目录页内容
-  const tocChildren = [
-    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 200, after: 400 }, children: [new TextRun({ text: '目录', bold: true, size: 32, font: '宋体' })] }),
-  ];
-
-  if (uniqueTocItems.length === 0) {
-    // 没有提取到标题时，显示提示
-    tocChildren.push(new Paragraph({
-      spacing: { after: 120 },
-      children: [new TextRun({ text: '（目录内容将在正文中展示）', size: 22, font: '宋体', color: '999999' })]
-    }));
-  } else {
-    uniqueTocItems.forEach(item => {
-      tocChildren.push(new Paragraph({
-        spacing: { after: 120 },
-        indent: { left: item.level === 3 ? 400 : 0 }, // level 3 (###) 有缩进
-        children: [new TextRun({ text: item.title, size: item.level === 2 ? 24 : 22, font: '宋体', bold: item.level === 2 })]
-      }));
-    });
+  const { TableOfContents } = require('docx');
+  
+  // 从AI内容中提取标题，生成静态目录
+  function extractTocFromContent(text) {
+    const lines = (text || '').split('\n');
+    const tocItems = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (/^#{1,3}\s/.test(trimmed)) {
+        const title = trimmed.replace(/^#+\s*/, '');
+        const level = trimmed.startsWith('###') ? 3 : trimmed.startsWith('##') ? 2 : 1;
+        if (!title.includes('目录')) {
+          tocItems.push({ title, level });
+        }
+      } else if (/^\d+[\.\、]/.test(trimmed) && trimmed.length < 60) {
+        const title = trimmed.replace(/^\d+[\.\、]\s*/, '');
+        if (!title.includes('目录')) {
+          tocItems.push({ title, level: 2 });
+        }
+      }
+    }
+    return tocItems.slice(0, 20);
   }
 
+  const tocItems = extractTocFromContent(aiContent);
+  const indentMap = { 1: 0, 2: 400, 3: 800 };
+  const tocParagraphs = [
+    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 200, after: 400 }, children: [new TextRun({ text: '目录', bold: true, size: 32, font: '宋体' })] }),
+    ...tocItems.map(item => new Paragraph({
+      spacing: { before: 80, after: 80 },
+      indent: { left: indentMap[item.level] || 0 },
+      children: [new TextRun({ text: item.title, size: 24, font: '宋体' })]
+    })),
+  ];
+
   const doc = new Document({
-    features: { updateFields: true },
     styles: {
       paragraphStyles: [
         { id: 'Heading1', name: 'Heading 1', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { size: 32, bold: true, font: '宋体' }, paragraph: { spacing: { before: 400, after: 200 }, outlineLevel: 0 } },
@@ -614,36 +587,17 @@ async function buildDesignDocx(data) {
       ]
     },
     sections: [
-      // Section 1: 封面
+      // 所有内容统一在一个section中，使用分页符分隔
       {
-        properties: {
-          ...pageProps,
-          headers: { ["default"]: emptyHF.header },
-          footers: { ["default"]: emptyHF.footer },
-        },
-        children: coverChildren,
-      },
-      // Section 2: 目录页
-      {
-        properties: {
-          ...pageProps,
-          headers: { default: docHeader },
-          footers: { default: emptyHF.footer },
-        },
-        children: tocChildren,
-      },
-      // Section 3: 正文
-      {
-        properties: {
-          ...pageProps,
-          page: {
-            ...pageProps.page,
-            pageNumbers: { start: 1 },
-          },
-          headers: { default: docHeader },
-          footers: { default: makeDocFooter() },
-        },
-        children: requirementChildren,
+        properties: { ...pageProps },
+        headers: { default: docHeader },
+        children: [
+          ...coverChildren,
+          new Paragraph({ children: [new PageBreak()] }),
+          ...tocParagraphs,
+          new Paragraph({ children: [new PageBreak()] }),
+          ...requirementChildren,
+        ],
       },
     ]
   });
