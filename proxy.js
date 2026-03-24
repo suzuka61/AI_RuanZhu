@@ -1,4 +1,4 @@
-// 秒著 - 一体化服务器 v3
+// 秒著 - 一体化服务器 v5 (多模型适配版)
 // node proxy.js
 const http = require('http');
 const https = require('https');
@@ -8,8 +8,195 @@ const { execSync } = require('child_process');
 
 const PORT = 3000;
 const HTML_FILE = path.join(__dirname, '秒著.html');
-const TARGET_HOST = 'ark.cn-beijing.volces.com';
-const TARGET_PATH = '/api/coding/v3/chat/completions';
+
+// ═══════════════════════════════════════════════════════════════
+// 多模型提供商配置表
+// ═══════════════════════════════════════════════════════════════
+const PROVIDERS = {
+  volcengine: {
+    name: '火山引擎方舟',
+    baseURL: 'ark.cn-beijing.volces.com',
+    apiPath: '/api/coding/v3/chat/completions',
+    headers: (apiKey) => ({
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    }),
+    formatRequest: (body) => ({
+      model: body.model,
+      messages: body.messages
+    }),
+    testModel: 'doubao-seed-2-0-code'
+  },
+
+  deepseek: {
+    name: 'DeepSeek',
+    baseURL: 'api.deepseek.com',
+    apiPath: '/v1/chat/completions',
+    headers: (apiKey) => ({
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    }),
+    formatRequest: (body) => ({
+      model: body.model,
+      messages: body.messages
+    }),
+    testModel: 'deepseek-chat'
+  },
+
+  zhipu: {
+    name: '智谱 GLM',
+    baseURL: 'open.bigmodel.cn',
+    apiPath: '/api/paas/v4/chat/completions',
+    headers: (apiKey) => ({
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    }),
+    formatRequest: (body) => ({
+      model: body.model,
+      messages: body.messages
+    }),
+    testModel: 'glm-4.7-thinking'
+  },
+
+  moonshot: {
+    name: '月之暗面 Kimi',
+    baseURL: 'api.moonshot.cn',
+    apiPath: '/v1/chat/completions',
+    headers: (apiKey) => ({
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    }),
+    formatRequest: (body) => ({
+      model: body.model,
+      messages: body.messages
+    }),
+    testModel: 'moonshot-v1-8k'
+  },
+
+  minimax: {
+    name: 'MiniMax',
+    baseURL: 'api.minimax.chat',
+    apiPath: '/v1/text/chatcompletion_v2',
+    headers: (apiKey) => ({
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    }),
+    formatRequest: (body) => ({
+      model: body.model,
+      messages: body.messages
+    }),
+    testModel: 'MiniMax-Text-01'
+  }
+};
+
+const MODEL_PROVIDER_MAP = {
+  'doubao-seed-2-0-code': 'volcengine',
+  'doubao-seed-2-0-pro': 'volcengine',
+  'deepseek-chat': 'deepseek',
+  'deepseek-coder': 'deepseek',
+  'glm-4.7-thinking': 'zhipu',
+  'glm-z1-airx': 'zhipu',
+  'glm-4-flash': 'zhipu',
+  'moonshot-v1-8k': 'moonshot',
+  'moonshot-v1-32k': 'moonshot',
+  'MiniMax-Text-01': 'minimax'
+};
+
+function getProviderConfig(model) {
+  const providerKey = MODEL_PROVIDER_MAP[model] || 'volcengine';
+  return { providerKey, config: PROVIDERS[providerKey] };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// API 调用核心函数
+// ═══════════════════════════════════════════════════════════════
+
+function callProviderAPI(providerKey, apiKey, body, callback) {
+  const provider = PROVIDERS[providerKey];
+  if (!provider) {
+    return callback(new Error(`未知的提供商: ${providerKey}`));
+  }
+
+  const requestBody = provider.formatRequest(body);
+  const requestData = JSON.stringify(requestBody);
+  const headers = provider.headers(apiKey);
+  
+  const options = {
+    hostname: provider.baseURL,
+    path: provider.apiPath,
+    method: 'POST',
+    headers: {
+      ...headers,
+      'Content-Length': Buffer.byteLength(requestData)
+    }
+  };
+
+  console.log(`[${new Date().toLocaleTimeString()}] → ${provider.name} (${body.model})`);
+
+  const req = https.request(options, (res) => {
+    let data = '';
+    res.on('data', (chunk) => { data += chunk; });
+    res.on('end', () => {
+      console.log(`[${new Date().toLocaleTimeString()}] ← ${provider.name} HTTP ${res.statusCode}`);
+      
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        try {
+          const parsed = JSON.parse(data);
+          callback(null, parsed);
+        } catch (e) {
+          callback(new Error(`解析响应失败: ${e.message}`));
+        }
+      } else {
+        let errorMsg = `HTTP ${res.statusCode}`;
+        try {
+          const errorData = JSON.parse(data);
+          errorMsg = errorData.error?.message || errorData.message || errorMsg;
+        } catch (e) {
+          errorMsg = data || errorMsg;
+        }
+        callback(new Error(errorMsg));
+      }
+    });
+  });
+
+  req.on('error', (e) => {
+    console.error(`[${new Date().toLocaleTimeString()}] ✗ ${provider.name} 请求失败:`, e.message);
+    callback(new Error(`网络请求失败: ${e.message}`));
+  });
+
+  req.write(requestData);
+  req.end();
+}
+
+function testAPIConnection(providerKey, apiKey, model, callback) {
+  const provider = PROVIDERS[providerKey];
+  const testModel = model || provider.testModel;
+  
+  const testBody = {
+    model: testModel,
+    messages: [
+      { role: 'user', content: '你好，这是一个API连接测试，请回复"连接成功"。' }
+    ]
+  };
+
+  callProviderAPI(providerKey, apiKey, testBody, (err, response) => {
+    if (err) {
+      return callback(err);
+    }
+    
+    const content = response.choices?.[0]?.message?.content;
+    if (content) {
+      callback(null, {
+        success: true,
+        provider: provider.name,
+        model: testModel,
+        response: content.slice(0, 100)
+      });
+    } else {
+      callback(new Error('响应格式异常'));
+    }
+  });
+}
 
 function ensureDocx() {
   if (!fs.existsSync(path.join(__dirname, 'node_modules', 'docx'))) {
@@ -22,7 +209,7 @@ ensureDocx();
 
 // ── 工具函数 ──────────────────────────────────────────────────────────────
 function makeBorder() {
-  const b = { style: 'single', size: 1, color: '888888' };
+  const b = { style: 'single', size: 1, color: '333333' };
   return { top: b, bottom: b, left: b, right: b };
 }
 
@@ -31,8 +218,8 @@ function makeHeaderCell(text, widthDxa) {
   return new TableCell({
     borders: makeBorder(),
     width: { size: widthDxa, type: WidthType.DXA },
-    shading: { fill: 'DDEEFF', type: ShadingType.CLEAR },
-    margins: { top: 60, bottom: 60, left: 100, right: 100 },
+    shading: { fill: 'F2F2F2', type: ShadingType.CLEAR },
+    margins: { top: 80, bottom: 80, left: 120, right: 120 },
     children: [new Paragraph({ children: [new TextRun({ text: String(text||''), bold: true, size: 22, font: '宋体' })] })]
   });
 }
@@ -42,7 +229,7 @@ function makeDataCell(text, widthDxa) {
   return new TableCell({
     borders: makeBorder(),
     width: { size: widthDxa, type: WidthType.DXA },
-    margins: { top: 60, bottom: 60, left: 100, right: 100 },
+    margins: { top: 80, bottom: 80, left: 120, right: 120 },
     children: [new Paragraph({ children: [new TextRun({ text: String(text||''), size: 22, font: '宋体' })] })]
   });
 }
@@ -66,12 +253,9 @@ function makeHeading(text, level) {
   });
 }
 
-// 将 base64 图片转为 ImageRun（带尺寸限制）
-// 从PNG/JPEG二进制读取原始宽高
 function getImageSize(buf, mime) {
   try {
     if (mime && (mime.includes('png'))) {
-      // PNG: width at offset 16, height at offset 20 (big-endian)
       if (buf[0]===0x89 && buf[1]===0x50 && buf[2]===0x4E && buf[3]===0x47) {
         const w = buf.readUInt32BE(16);
         const h = buf.readUInt32BE(20);
@@ -79,7 +263,6 @@ function getImageSize(buf, mime) {
       }
     }
     if (mime && (mime.includes('jpeg') || mime.includes('jpg'))) {
-      // JPEG: scan for SOF marker
       let i = 2;
       while (i < buf.length - 8) {
         if (buf[i] === 0xFF) {
@@ -104,7 +287,6 @@ function makeImageRun(imgObj) {
   const mime = imgObj.mime || 'image/png';
   const type = mime.includes('jpeg') || mime.includes('jpg') ? 'jpg' : 'png';
 
-  // 最大可用宽度（A4 减去页边距）约 500px
   const MAX_W = 500;
   const MAX_H = 600;
 
@@ -130,7 +312,6 @@ function makeImageRun(imgObj) {
   return new ImageRun({ data: buf, transformation: { width, height }, type });
 }
 
-// 图片段落
 function makeImagePara(imgObj, caption) {
   const { Paragraph, TextRun, AlignmentType } = require('docx');
   return [
@@ -147,8 +328,6 @@ function makeImagePara(imgObj, caption) {
   ];
 }
 
-// ── 页眉页脚工具 ──────────────────────────────────────────────────────────
-// 页眉：左侧软件名，右侧"第x页 共x页"
 function makeDocHeader(titleText) {
   const { Header, Paragraph, TextRun, TabStopPosition, TabStopType, PageNumber } = require('docx');
 
@@ -176,7 +355,6 @@ function makeDocHeader(titleText) {
   });
 }
 
-// 页脚为空（不使用页脚）
 function makeEmptyFooter() {
   const { Footer, Paragraph } = require('docx');
   return new Footer({
@@ -196,7 +374,147 @@ function makeEmptyHeaderFooter() {
   };
 }
 
-// ── 生成软件概述 ──────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// HTTP 服务器路由处理
+// ═══════════════════════════════════════════════════════════════
+
+function handleCORS(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+}
+
+function sendJSON(res, status, data) {
+  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(data));
+}
+
+function parseBody(req, callback) {
+  let body = '';
+  req.on('data', chunk => body += chunk);
+  req.on('end', () => {
+    try {
+      const parsed = JSON.parse(body);
+      callback(null, parsed);
+    } catch (e) {
+      callback(new Error('无效的JSON格式'));
+    }
+  });
+}
+
+function handleTestAPI(req, res) {
+  parseBody(req, (err, body) => {
+    if (err) {
+      return sendJSON(res, 400, { success: false, error: err.message });
+    }
+
+    const { provider, apiKey, model } = body;
+    
+    if (!provider || !apiKey) {
+      return sendJSON(res, 400, { 
+        success: false, 
+        error: '缺少必要参数: provider 和 apiKey' 
+      });
+    }
+
+    const providerConfig = PROVIDERS[provider];
+    if (!providerConfig) {
+      return sendJSON(res, 400, { 
+        success: false, 
+        error: `未知的提供商: ${provider}` 
+      });
+    }
+
+    testAPIConnection(provider, apiKey, model, (err, result) => {
+      if (err) {
+        console.error(`[${new Date().toLocaleTimeString()}] ✗ ${providerConfig.name} 测试失败:`, err.message);
+        return sendJSON(res, 200, {
+          success: false,
+          provider: provider,
+          providerName: providerConfig.name,
+          error: err.message
+        });
+      }
+
+      console.log(`[${new Date().toLocaleTimeString()}] ✓ ${providerConfig.name} 测试成功`);
+      sendJSON(res, 200, {
+        success: true,
+        provider: provider,
+        providerName: providerConfig.name,
+        model: result.model,
+        response: result.response
+      });
+    });
+  });
+}
+
+function handleChatAPI(req, res) {
+  parseBody(req, (err, body) => {
+    if (err) {
+      return sendJSON(res, 400, { error: err.message });
+    }
+
+    const { apiKey, model, messages } = body;
+
+    if (!apiKey) {
+      return sendJSON(res, 401, { error: '缺少API密钥' });
+    }
+
+    if (!messages || !Array.isArray(messages)) {
+      return sendJSON(res, 400, { error: 'messages 必须是数组' });
+    }
+
+    const { providerKey, config: providerConfig } = getProviderConfig(model);
+
+    const requestBody = {
+      model: model || providerConfig.testModel,
+      messages: messages
+    };
+
+    callProviderAPI(providerKey, apiKey, requestBody, (err, result) => {
+      if (err) {
+        return sendJSON(res, 502, { 
+          error: {
+            message: err.message,
+            provider: providerConfig.name
+          }
+        });
+      }
+
+      sendJSON(res, 200, result);
+    });
+  });
+}
+
+function handleGenerateDocx(req, res) {
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', async () => {
+    try {
+      const data = JSON.parse(body);
+      console.log('[' + new Date().toLocaleTimeString() + '] 生成docx: ' + data.type + ' | 图片数: ' + (data.images||[]).length + ' | 人员数: ' + (data.info?.team_members||[]).length);
+      const buffer = data.type === 'overview' ? await buildOverviewDocx(data) : await buildDesignDocx(data);
+      const fname = data.type === 'overview' ? '%E8%BD%AF%E4%BB%B6%E6%A6%82%E8%BF%B0.docx' : '%E8%AE%BE%E8%AE%A1%E8%AF%B4%E6%98%8E%E4%B9%A6.docx';
+      res.writeHead(200, {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'Content-Disposition': 'attachment; filename*=UTF-8\'\'' + fname,
+        'Access-Control-Allow-Origin': '*',
+        'Content-Length': buffer.length,
+      });
+      res.end(buffer);
+      console.log('[' + new Date().toLocaleTimeString() + '] ✓ docx生成 ' + buffer.length + ' bytes');
+    } catch(e) {
+      console.error('生成docx失败:', e);
+      res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 生成软件概述和设计说明书的函数
+// ═══════════════════════════════════════════════════════════════
+
 async function buildOverviewDocx(data) {
   const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
           AlignmentType, WidthType, ShadingType, PageBreak, HeaderFooterType } = require('docx');
@@ -210,105 +528,80 @@ async function buildOverviewDocx(data) {
       children: [
         new TableCell({
           borders: makeBorder(), width: { size: 3200, type: WidthType.DXA },
-          shading: { fill: 'F5F5F5', type: ShadingType.CLEAR },
+          shading: { fill: 'F2F2F2', type: ShadingType.CLEAR },
           margins: { top: 80, bottom: 80, left: 120, right: 120 },
-          children: [new Paragraph({ children: [new TextRun({ text: label, bold: true, size: 22, font: '宋体' })] })]
+          children: [new Paragraph({ children: [new TextRun({ text: String(label||''), bold: true, size: 22, font: '宋体' })] })]
         }),
         new TableCell({
           borders: makeBorder(), width: { size: 6800, type: WidthType.DXA },
           margins: { top: 80, bottom: 80, left: 120, right: 120 },
-          children: [new Paragraph({ children: [new TextRun({ text: String(value||'待填写'), size: 22, font: '宋体' })] })]
-        }),
+          children: [new Paragraph({ children: [new TextRun({ text: String(value||''), size: 22, font: '宋体' })] })]
+        })
       ]
     });
   }
 
-  // 功能模块列表
-  const modules = (info.main_features || '').split('\n').filter(l => l.trim()).slice(0, 10);
-  const funcRows = [
-    new TableRow({ children: ['序号','功能名称','功能描述'].map((h,i) => makeHeaderCell(h,[1000,2800,6200][i])) }),
-    ...modules.map((mod, i) => {
-      const clean = mod.replace(/^[\d\.\-\*①②③④⑤⑥⑦⑧⑨⑩、]+/, '').trim();
-      const parts = clean.split(/[：:]/);
-      const name = (parts[0]||'').trim() || ('功能'+(i+1));
-      const desc = (parts[1]||clean).trim();
-      return new TableRow({ children: [makeDataCell(i+1,1000), makeDataCell(name,2800), makeDataCell(desc,6200)] });
-    })
+  const fields = [
+    ['软件全称', info.software_name],
+    ['版本号', info.version],
+    ['开发者', info.developer],
+    ['开发完成日期', info.completion_date],
+    ['首次发表日期', info.publish_date],
+    ['首次发表地点', info.publish_location],
+    ['开发目的', info.purpose],
+    ['主要功能', info.main_features],
+    ['编程语言', info.programming_langs],
+    ['源程序量', info.source_lines ? info.source_lines + ' 行' : ''],
+    ['开发操作系统', info.dev_os],
+    ['开发工具', info.dev_tools],
+    ['运行平台', info.run_platform],
+    ['运行环境', info.runtime_env],
+    ['开发硬件环境', info.dev_hardware],
+    ['技术架构', info.architecture],
+    ['面向领域', info.industry],
   ];
 
-  // 查找架构图
-  const archImg = images.find(img => img.section && (img.section.includes('架构') || img.section.includes('功能'))) || images[0];
+  const bodyChildren = [
+    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 1200, after: 600 }, children: [new TextRun({ text: softwareName, bold: true, size: 48, font: '宋体' })] }),
+    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 800 }, children: [new TextRun({ text: '软件概述', bold: true, size: 40, font: '宋体' })] }),
+    new Paragraph({ spacing: { after: 400 }, children: [] }),
+    new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: fields.map(f => fieldRow(f[0], f[1])) }),
+  ];
+
+  if (images.length > 0) {
+    bodyChildren.push(new Paragraph({ spacing: { before: 400, after: 200 }, children: [new TextRun({ text: '软件界面截图', bold: true, size: 24, font: '宋体' })] }));
+    for (const img of images.slice(0, 5)) {
+      const caption = img.section ? img.section.replace(/^[\d\.\、\s]+/, '').slice(0, 40) : '界面截图';
+      bodyChildren.push(...makeImagePara(img, caption));
+    }
+  }
 
   const pageProps = { page: { size: { width: 11906, height: 16838 }, margin: { top: 1440, right: 1440, bottom: 1440, left: 1800 } } };
   const emptyHF = makeEmptyHeaderFooter();
-
-  // 封面 section
-  const coverChildren = [
-    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 3000, after: 600 }, children: [new TextRun({ text: softwareName, bold: true, size: 48, font: '宋体' })] }),
-    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 800 }, children: [new TextRun({ text: '软件概述', bold: true, size: 40, font: '宋体' })] }),
-    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 200 }, children: [new TextRun({ text: info.developer || '', size: 26, font: '宋体' })] }),
-    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 200 }, children: [new TextRun({ text: info.completion_date || '', size: 24, font: '宋体' })] }),
-  ];
-
-  // 正文内容
-  const bodyChildren = [
-    new Table({
-      width: { size: 10000, type: WidthType.DXA },
-      rows: [
-        fieldRow('软件全称', info.software_name),
-        fieldRow('软件简称', info.short_name),
-        fieldRow('版本号', info.version),
-        fieldRow('软件分类', '应用软件'),
-        fieldRow('软件说明', '①原创'),
-        fieldRow('开发方式', '独立开发'),
-        fieldRow('开发完成日期', info.completion_date),
-        fieldRow('首次发表日期', info.publish_date),
-        fieldRow('首次发表地点', info.publish_location),
-        fieldRow('开发的硬件环境', info.dev_hardware),
-        fieldRow('运行的硬件环境', info.dev_hardware),
-        fieldRow('开发该软件的操作系统', info.dev_os),
-        fieldRow('软件开发环境/开发工具', info.dev_tools),
-        fieldRow('该软件的运行平台/操作系统', info.run_platform),
-        fieldRow('软件运行支撑环境/支持软件', info.runtime_env),
-        fieldRow('编程语言', info.programming_langs),
-        fieldRow('源程序量', (info.source_lines||'') + ' 行'),
-      ]
-    }),
-    makePara(''),
-    makeHeading('开发目的', 2),
-    ...(info.purpose||'').split('\n').filter(l=>l.trim()).map(l => makePara(l)),
-    makePara(''),
-    makeHeading('面向领域/行业', 2),
-    makePara(info.industry || '通用'),
-    makePara(''),
-    makeHeading('软件的主要功能', 2),
-    new Table({ width: { size: 10000, type: WidthType.DXA }, rows: funcRows }),
-    makePara(''),
-    makeHeading('软件的技术特点', 2),
-    ...(info.architecture||'').split('\n').filter(l=>l.trim()).map(l => makePara(l)),
-  ];
-
-  if (archImg) {
-    bodyChildren.push(makePara(''));
-    bodyChildren.push(makeHeading('产品架构图', 2));
-    bodyChildren.push(...makeImagePara(archImg, '图1 产品功能架构图'));
-  }
+  const docHeader = makeDocHeader(softwareName);
 
   const doc = new Document({
-    sections: [{
-      properties: { ...pageProps },
-      headers: { default: makeDocHeader(softwareName) },
-      children: [
-        ...coverChildren,
-        new Paragraph({ children: [new PageBreak()] }),
-        ...bodyChildren,
-      ],
-    }]
+    features: { updateFields: true },
+    styles: {
+      paragraphStyles: [
+        { id: 'Heading1', name: 'Heading 1', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { size: 32, bold: true, font: '宋体' }, paragraph: { spacing: { before: 400, after: 200 }, outlineLevel: 0 } },
+        { id: 'Heading2', name: 'Heading 2', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { size: 26, bold: true, font: '宋体' }, paragraph: { spacing: { before: 280, after: 140 }, outlineLevel: 1 } },
+      ]
+    },
+    sections: [
+      {
+        properties: {
+          ...pageProps,
+          headers: { default: docHeader },
+          footers: { default: emptyHF.footer },
+        },
+        children: bodyChildren,
+      },
+    ]
   });
   return Packer.toBuffer(doc);
 }
 
-// ── 生成设计说明书 ─────────────────────────────────────────────────────────
 async function buildDesignDocx(data) {
   const { Document, Packer, Paragraph, TextRun, Table, TableRow, AlignmentType,
           HeadingLevel, WidthType, PageBreak } = require('docx');
@@ -317,11 +610,8 @@ async function buildDesignDocx(data) {
   const images = data.images || [];
   const aiContent = data.content || '';
 
-  // 调试日志：确认收到内容
   console.log('[调试] aiContent 长度:', aiContent.length);
-  console.log('[调试] aiContent 前300字:', aiContent.slice(0, 300));
 
-  // 人员分工表
   const members = info.team_members || [];
   const validMembers = members.filter(m => m.name && m.name.trim() && m.name !== '待填写');
   const memberWidths = [1500, 2500, 2000, 2000, 2000];
@@ -333,7 +623,6 @@ async function buildDesignDocx(data) {
     )
   ];
 
-  // 功能目标表
   const modules = (info.main_features||'').split('\n').filter(l=>l.trim()).slice(0,10);
   const goalRows = [
     new TableRow({ children: ['序号','名称','功能'].map((h,i) => makeHeaderCell(h,[1000,2800,6200][i])) }),
@@ -346,7 +635,6 @@ async function buildDesignDocx(data) {
     })
   ];
 
-  // ── 图片智能匹配 ──
   function textSimilarity(a, b) {
     if (!a || !b) return 0;
     a = a.replace(/[\s\d\.\、\#\*]+/g, '').toLowerCase();
@@ -388,11 +676,9 @@ async function buildDesignDocx(data) {
       }
     }
 
-    // 使用图片索引来追踪已使用的图片（避免对象引用问题）
     const usedImageIndices = new Set();
     const mapping = {};
 
-    // 找到架构图在 images 数组中的索引
     let archImgIndex = -1;
     if (archImg) {
       archImgIndex = images.findIndex(img => img.name === archImg.name && img.from === archImg.from);
@@ -408,11 +694,9 @@ async function buildDesignDocx(data) {
     const wireframePhs = placeholders.filter(ph => ph.type === '[WIREFRAME]');
     let wireframeIndex = 0;
 
-    // 策略 1：首先尝试通过标题相似度匹配图片和占位符
     for (const ph of wireframePhs) {
       if (!ph.heading) continue;
       
-      // 找到最匹配的图片
       let bestMatch = { index: -1, similarity: 0 };
       for (let i = 0; i < images.length; i++) {
         if (usedImageIndices.has(i)) continue;
@@ -425,7 +709,6 @@ async function buildDesignDocx(data) {
         }
       }
       
-      // 如果相似度足够高（>0.5），使用匹配的图片
       if (bestMatch.index >= 0 && bestMatch.similarity > 0.5) {
         const img = images[bestMatch.index];
         const caption = img.section ? img.section.replace(/^[\d\.\、\s]+/, '').slice(0, 40) : (ph.heading || '界面示意图');
@@ -434,11 +717,9 @@ async function buildDesignDocx(data) {
       }
     }
 
-    // 策略 2：对于未匹配的占位符，按顺序匹配剩余图片
     for (const ph of wireframePhs) {
-      if (mapping[ph.lineIndex]) continue; // 已经匹配的跳过
+      if (mapping[ph.lineIndex]) continue;
       
-      // 找到下一个未使用的图片
       while (wireframeIndex < images.length && usedImageIndices.has(wireframeIndex)) {
         wireframeIndex++;
       }
@@ -458,12 +739,10 @@ async function buildDesignDocx(data) {
   const archImg = images.find(img => img.section && (img.section.includes('架构') || img.section.includes('功能模块') || img.section.includes('产品功能')));
   const wireframeImgs = images.filter(img => img !== archImg);
 
-  // ── 清理 markdown 格式符号 ──
   function cleanMarkdown(txt) {
     return (txt || '').replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').trim();
   }
 
-  // ── AI内容转docx段落 ──
   function contentToParasWithImages(text, images) {
     const lines = (text||'').split('\n');
     const { mapping, unmatchedImgs } = matchImagesToPlaceholders(lines, images, archImg);
@@ -530,12 +809,45 @@ async function buildDesignDocx(data) {
   const softwareName = info.software_name || '设计说明书';
   const pageProps = { page: { size: { width: 11906, height: 16838 }, margin: { top: 1440, right: 1440, bottom: 1440, left: 1800 } } };
   const emptyHF = makeEmptyHeaderFooter();
-  
-  // 调试：确认页眉创建
   const docHeader = makeDocHeader(softwareName);
-  console.log('[调试] 设计说明书页眉创建成功:', softwareName);
 
-  // 封面内容
+  function generateTocFromContent(content) {
+    const lines = (content || '').split('\n');
+    const tocItems = [];
+    
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const cleanTitle = (t) => t.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').trim();
+      
+      if (/^##\s/.test(trimmed) && !/^###/.test(trimmed)) {
+        const title = cleanTitle(trimmed.replace(/^##\s*/, ''));
+        if (title && !title.includes('目录')) {
+          tocItems.push({ level: 2, title });
+        }
+      }
+      else if (/^###\s/.test(trimmed)) {
+        const title = cleanTitle(trimmed.replace(/^###\s*/, ''));
+        if (title) {
+          tocItems.push({ level: 3, title });
+        }
+      }
+    }
+    
+    return tocItems;
+  }
+
+  const tocItems = generateTocFromContent(aiContent);
+
+  const seenTitles = new Set();
+  const uniqueTocItems = [];
+  for (const item of tocItems) {
+    const key = item.level + '|' + item.title;
+    if (!seenTitles.has(key)) {
+      seenTitles.add(key);
+      uniqueTocItems.push(item);
+    }
+  }
+
   const coverChildren = [
     new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 3000, after: 600 }, children: [new TextRun({ text: softwareName, bold: true, size: 48, font: '宋体' })] }),
     new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 800 }, children: [new TextRun({ text: '设计说明书', bold: true, size: 40, font: '宋体' })] }),
@@ -543,42 +855,27 @@ async function buildDesignDocx(data) {
     new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 200 }, children: [new TextRun({ text: info.completion_date||'', size: 24, font: '宋体' })] }),
   ];
 
-  const { TableOfContents } = require('docx');
-  
-  // 从AI内容中提取标题，生成静态目录
-  function extractTocFromContent(text) {
-    const lines = (text || '').split('\n');
-    const tocItems = [];
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (/^#{1,3}\s/.test(trimmed)) {
-        const title = trimmed.replace(/^#+\s*/, '');
-        const level = trimmed.startsWith('###') ? 3 : trimmed.startsWith('##') ? 2 : 1;
-        if (!title.includes('目录')) {
-          tocItems.push({ title, level });
-        }
-      } else if (/^\d+[\.\、]/.test(trimmed) && trimmed.length < 60) {
-        const title = trimmed.replace(/^\d+[\.\、]\s*/, '');
-        if (!title.includes('目录')) {
-          tocItems.push({ title, level: 2 });
-        }
-      }
-    }
-    return tocItems.slice(0, 20);
-  }
-
-  const tocItems = extractTocFromContent(aiContent);
-  const indentMap = { 1: 0, 2: 400, 3: 800 };
-  const tocParagraphs = [
+  const tocChildren = [
     new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 200, after: 400 }, children: [new TextRun({ text: '目录', bold: true, size: 32, font: '宋体' })] }),
-    ...tocItems.map(item => new Paragraph({
-      spacing: { before: 80, after: 80 },
-      indent: { left: indentMap[item.level] || 0 },
-      children: [new TextRun({ text: item.title, size: 24, font: '宋体' })]
-    })),
   ];
 
+  if (uniqueTocItems.length === 0) {
+    tocChildren.push(new Paragraph({
+      spacing: { after: 120 },
+      children: [new TextRun({ text: '（目录内容将在正文中展示）', size: 22, font: '宋体', color: '999999' })]
+    }));
+  } else {
+    uniqueTocItems.forEach(item => {
+      tocChildren.push(new Paragraph({
+        spacing: { after: 120 },
+        indent: { left: item.level === 3 ? 400 : 0 },
+        children: [new TextRun({ text: item.title, size: item.level === 2 ? 24 : 22, font: '宋体', bold: item.level === 2 })]
+      }));
+    });
+  }
+
   const doc = new Document({
+    features: { updateFields: true },
     styles: {
       paragraphStyles: [
         { id: 'Heading1', name: 'Heading 1', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { size: 32, bold: true, font: '宋体' }, paragraph: { spacing: { before: 400, after: 200 }, outlineLevel: 0 } },
@@ -587,123 +884,96 @@ async function buildDesignDocx(data) {
       ]
     },
     sections: [
-      // 所有内容统一在一个section中，使用分页符分隔
       {
-        properties: { ...pageProps },
-        headers: { default: docHeader },
-        children: [
-          ...coverChildren,
-          new Paragraph({ children: [new PageBreak()] }),
-          ...tocParagraphs,
-          new Paragraph({ children: [new PageBreak()] }),
-          ...requirementChildren,
-        ],
+        properties: {
+          ...pageProps,
+          headers: { ["default"]: emptyHF.header },
+          footers: { ["default"]: emptyHF.footer },
+        },
+        children: coverChildren,
+      },
+      {
+        properties: {
+          ...pageProps,
+          headers: { default: docHeader },
+          footers: { default: emptyHF.footer },
+        },
+        children: tocChildren,
+      },
+      {
+        properties: {
+          ...pageProps,
+          page: {
+            ...pageProps.page,
+            pageNumbers: { start: 1 },
+          },
+          headers: { default: docHeader },
+          footers: { default: emptyHF.footer },
+        },
+        children: requirementChildren,
       },
     ]
   });
   return Packer.toBuffer(doc);
 }
 
-// ── HTTP 服务器 ──────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// HTTP 服务器
+// ═══════════════════════════════════════════════════════════════
+
 const server = http.createServer((req, res) => {
 
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, GET, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' });
-    res.end(); return;
+    handleCORS(req, res);
+    res.writeHead(204);
+    res.end();
+    return;
   }
 
-  // /proxy → 火山引擎
+  // API 测试端点
+  if (req.url === '/api/test' && req.method === 'POST') {
+    handleCORS(req, res);
+    return handleTestAPI(req, res);
+  }
+
+  // 聊天 API 端点
+  if (req.url === '/api/chat' && req.method === 'POST') {
+    handleCORS(req, res);
+    return handleChatAPI(req, res);
+  }
+
+  // 旧的 /proxy 端点（向后兼容）
   if (req.url === '/proxy' && req.method === 'POST') {
-    let body = '';
-    req.on('data', c => body += c);
-    req.on('end', () => {
-      let parsedBody;
-      try {
-        parsedBody = JSON.parse(body);
-      } catch(e) {
-        res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(JSON.stringify({ error: '无效的JSON格式' }));
-        return;
-      }
-      
-      const apiKey = parsedBody.apiKey || '';
-      if (!apiKey) {
-        res.writeHead(401, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(JSON.stringify({ error: '缺少API密钥' }));
-        return;
-      }
-      
-      const forwardBody = JSON.stringify({
-        model: parsedBody.model,
-        messages: parsedBody.messages
-      });
-      
-      const opts = { 
-        hostname: TARGET_HOST, 
-        path: TARGET_PATH, 
-        method: 'POST', 
-        headers: { 
-          'Content-Type': 'application/json', 
-          'Authorization': 'Bearer ' + apiKey, 
-          'Content-Length': Buffer.byteLength(forwardBody) 
-        } 
-      };
-      const pr = https.request(opts, pRes => {
-        res.writeHead(pRes.statusCode, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        pRes.pipe(res);
-        pRes.on('end', () => console.log('[' + new Date().toLocaleTimeString() + '] API ' + pRes.statusCode));
-      });
-      pr.on('error', e => { res.writeHead(502); res.end(JSON.stringify({ error: { message: e.message } })); });
-      console.log('[' + new Date().toLocaleTimeString() + '] → 火山引擎');
-      pr.write(forwardBody); pr.end();
-    });
-    return;
+    handleCORS(req, res);
+    return handleChatAPI(req, res);
   }
 
-  // /generate-docx → 生成Word
+  // 生成 docx 端点
   if (req.url === '/generate-docx' && req.method === 'POST') {
-    let body = '';
-    req.on('data', c => body += c);
-    req.on('end', async () => {
-      try {
-        const data = JSON.parse(body);
-        console.log('[' + new Date().toLocaleTimeString() + '] 生成docx: ' + data.type + ' | 图片数: ' + (data.images||[]).length + ' | 人员数: ' + (data.info?.team_members||[]).length);
-        const buffer = data.type === 'overview' ? await buildOverviewDocx(data) : await buildDesignDocx(data);
-        const fname = data.type === 'overview' ? '%E8%BD%AF%E4%BB%B6%E6%A6%82%E8%BF%B0.docx' : '%E8%AE%BE%E8%AE%A1%E8%AF%B4%E6%98%8E%E4%B9%A6.docx';
-        res.writeHead(200, {
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          'Content-Disposition': 'attachment; filename*=UTF-8\'\'' + fname,
-          'Access-Control-Allow-Origin': '*',
-          'Content-Length': buffer.length,
-        });
-        res.end(buffer);
-        console.log('[' + new Date().toLocaleTimeString() + '] ✓ docx生成 ' + buffer.length + ' bytes');
-      } catch(e) {
-        console.error('生成docx失败:', e);
-        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(JSON.stringify({ error: e.message }));
-      }
-    });
+    return handleGenerateDocx(req, res);
+  }
+
+  // 静态文件服务
+  if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
+    if (!fs.existsSync(HTML_FILE)) { 
+      res.writeHead(404); 
+      res.end('找不到秒著.html'); 
+      return; 
+    }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(fs.readFileSync(HTML_FILE, 'utf-8'));
     return;
   }
 
-  // GET / → HTML
-  if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
-    if (!fs.existsSync(HTML_FILE)) { res.writeHead(404); res.end('找不到秒著.html'); return; }
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(fs.readFileSync(HTML_FILE, 'utf-8')); return;
-  }
-
-  res.writeHead(404); res.end('Not found');
+  res.writeHead(404);
+  res.end('Not found');
 });
 
 server.listen(PORT, () => {
-  console.log('\n  🌋 秒著 v3 已启动');
+  console.log('\n  🌋 秒著 v5 (多模型适配版) 已启动');
   console.log('  ──────────────────────────────────');
   console.log('  👉 http://localhost:' + PORT);
   console.log('  ──────────────────────────────────');
-  console.log('  · 自动提取上传文档中的图片并嵌入docx');
-  console.log('  · 人员信息从文档原文提取，不编造');
+  console.log('  · 支持: 火山引擎、DeepSeek、智谱GLM、Kimi、MiniMax');
   console.log('  · 按 Ctrl+C 停止\n');
-  require('child_process').exec('open http://localhost:' + PORT);
 });

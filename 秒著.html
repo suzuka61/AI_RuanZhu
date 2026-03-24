@@ -334,19 +334,6 @@ textarea {
   resize: vertical;
   border-radius: var(--radius-md);
 }
-  border-color: var(--accent);
-}
-
-input::placeholder,
-textarea::placeholder {
-  color: var(--gray-300);
-}
-
-textarea {
-  min-height: 80px;
-  resize: vertical;
-}
-
 .btn {
   display: inline-flex;
   align-items: center;
@@ -421,6 +408,32 @@ textarea {
 
 .btn-full {
   width: 100%;
+}
+
+.test-result {
+  margin-top: var(--space-sm);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.test-result.success {
+  background: rgba(93, 112, 82, 0.1);
+  border: 1px solid var(--color-moss);
+  color: var(--color-moss);
+}
+
+.test-result.error {
+  background: rgba(168, 84, 72, 0.1);
+  border: 1px solid var(--color-clay);
+  color: var(--color-clay);
+}
+
+.test-result.loading {
+  background: rgba(193, 140, 93, 0.1);
+  border: 1px solid var(--color-terracotta);
+  color: var(--color-terracotta);
 }
 
 .upload-zone {
@@ -612,15 +625,15 @@ textarea {
 }
 
 .progress-step.active .progress-step-icon {
-  color: white;
-  border-color: var(--color-moss);
-  background: var(--color-moss);
+  color: var(--text-primary);
+  border-color: var(--color-wood);
+  background: white;
 }
 
 .progress-step.completed .progress-step-icon {
   color: white;
-  border-color: var(--color-terracotta);
-  background: var(--color-terracotta);
+  border-color: var(--color-moss);
+  background: var(--color-moss);
 }
 
 .progress-step-text {
@@ -646,24 +659,20 @@ textarea {
 .result-tabs {
   display: flex;
   gap: var(--space-sm);
-  border-bottom: none;
   margin-bottom: var(--space-md);
-  padding: var(--space-sm);
-  background: var(--color-stone);
-  border-radius: var(--radius-lg);
+  border-bottom: 2px solid var(--color-wood);
+  padding-bottom: var(--space-xs);
 }
 
 .result-tab {
-  padding: 12px 24px;
-  font-size: 13px;
+  padding: 10px 20px;
+  font-size: 14px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   cursor: pointer;
-  border: 2px solid transparent;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  border-radius: var(--radius-md);
+  border: none;
+  border-bottom: 3px solid transparent;
+  transition: all 0.2s ease;
   background: transparent;
   flex: 1;
   text-align: center;
@@ -671,15 +680,11 @@ textarea {
 
 .result-tab.active {
   color: var(--color-moss);
-  background: var(--bg-card);
-  border-color: var(--color-moss);
-  box-shadow: var(--shadow-soft);
+  border-bottom-color: var(--color-moss);
 }
 
 .result-tab:hover:not(.active) {
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.5);
-  border-color: var(--color-wood);
+  color: var(--text-secondary);
 }
 
 .result-card {
@@ -1061,20 +1066,26 @@ textarea {
         <span class="tip-box-small">代理运行在 localhost:3000，解决浏览器跨域限制</span>
       </div>
       <div class="form-group">
-        <label>API Key</label>
-        <input type="password" id="apiKey" placeholder="输入您的火山引擎API密钥"/>
-      </div>
-      <div class="form-group">
-        <label>模型选择</label>
-        <select id="modelSelect">
-          <option value="doubao-seed-2-0-code">Doubao Seed 2.0 Code (推荐)</option>
-          <option value="doubao-seed-2-0-pro">Doubao Seed 2.0 Pro</option>
-          <option value="kimi-k2-5">Kimi K2.5</option>
-          <option value="deepseek-v3-2">DeepSeek V3.2</option>
-          <option value="glm-4-7">GLM 4.7</option>
-          <option value="minimax-m2-5">MiniMax M2.5</option>
+        <label>API 提供商</label>
+        <select id="providerSelect" onchange="updateModelForProvider()">
+          <option value="volcengine">火山引擎方舟</option>
+          <option value="deepseek">DeepSeek</option>
+          <option value="zhipu">智谱 GLM</option>
+          <option value="moonshot">月之暗面 Kimi</option>
+          <option value="minimax">MiniMax</option>
         </select>
       </div>
+      <div class="form-group">
+        <label>API Key</label>
+        <input type="password" id="apiKey" placeholder="输入您的API密钥"/>
+      </div>
+      <!-- 模型选择已移除，使用提供商默认模型 -->
+      <div class="form-group">
+        <button class="btn btn-secondary" onclick="testAPIConnection()" id="testBtn" style="width: 100%;">
+          🔌 测试 API 连接
+        </button>
+      </div>
+      <div id="testResult" class="test-result" style="display: none;"></div>
       <div class="mt-24">
         <button class="btn btn-primary btn-full" onclick="saveConfig()">保存并继续</button>
       </div>
@@ -1182,6 +1193,15 @@ textarea {
         <p class="footer-note">提示：上传的 docx 文档中的图片将自动提取并嵌入生成的文档。</p>
       </div>
     </div>
+
+    <!-- 最近生成记录 -->
+    <div class="history-section" id="historySection" style="display:none; margin-top: 40px; padding: 24px; background: var(--color-stone); border-radius: var(--radius-lg);">
+      <h3 style="font-family: 'Fraunces', serif; font-size: 20px; color: var(--color-moss); margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 24px;">📋</span> 最近生成的项目
+      </h3>
+      <div id="historyList" style="display: flex; flex-direction: column; gap: 12px;"></div>
+    </div>
+
   </div>
 </div>
 <script>
@@ -1193,7 +1213,17 @@ let extractedInfo = {};
 let results = ['', ''];
 let config = {
   apiKey: localStorage.getItem('apiKey') || '',
+  provider: localStorage.getItem('provider') || 'volcengine',
   model: localStorage.getItem('model') || 'doubao-seed-2-0-code'
+};
+
+// 提供商默认模型配置
+const PROVIDER_DEFAULT_MODELS = {
+  volcengine: 'doubao-seed-2-0-code',
+  deepseek: 'deepseek-chat',
+  zhipu: 'glm-4.7-thinking',
+  moonshot: 'moonshot-v1-8k',
+  minimax: 'MiniMax-Text-01'
 };
 
 const INFO_FIELDS_CORE = [
@@ -1226,12 +1256,80 @@ const INFO_FIELDS = [...INFO_FIELDS_CORE, ...INFO_FIELDS_ADVANCED];
 function init() {
   if (config.apiKey) {
     document.getElementById('apiKey').value = config.apiKey;
-    document.getElementById('modelSelect').value = config.model;
+    document.getElementById('providerSelect').value = config.provider;
+    // 使用默认模型
+    config.model = PROVIDER_DEFAULT_MODELS[config.provider] || 'doubao-seed-2-0-code';
     updateStepStatus(0, 'completed');
     enableStep(1);
     goToStep(1);
   }
   setupDragDrop();
+  renderHistory();
+}
+
+// 根据提供商自动设置默认模型
+function updateModelForProvider() {
+  const provider = document.getElementById('providerSelect').value;
+  config.provider = provider;
+  config.model = PROVIDER_DEFAULT_MODELS[provider] || 'doubao-seed-2-0-code';
+}
+
+async function testAPIConnection() {
+  const provider = document.getElementById('providerSelect').value;
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const model = PROVIDER_DEFAULT_MODELS[provider] || 'doubao-seed-2-0-code';
+  const testBtn = document.getElementById('testBtn');
+  const testResult = document.getElementById('testResult');
+  
+  if (!apiKey) {
+    testResult.style.display = 'block';
+    testResult.className = 'test-result error';
+    testResult.innerHTML = '❌ 请先输入 API Key';
+    return;
+  }
+  
+  testBtn.disabled = true;
+  testBtn.innerHTML = '⏳ 测试中...';
+  testResult.style.display = 'block';
+  testResult.className = 'test-result loading';
+  testResult.innerHTML = '🔄 正在连接 API...';
+  
+  try {
+    const response = await fetch('http://localhost:3000/api/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, apiKey, model })
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      testResult.className = 'test-result success';
+      testResult.innerHTML = `
+        ✅ <strong>连接成功！</strong><br>
+        提供商: ${result.providerName}<br>
+        模型: ${result.model}<br>
+        响应: ${result.response}
+      `;
+    } else {
+      testResult.className = 'test-result error';
+      testResult.innerHTML = `
+        ❌ <strong>连接失败</strong><br>
+        提供商: ${result.providerName || provider}<br>
+        错误: ${result.error}
+      `;
+    }
+  } catch (error) {
+    testResult.className = 'test-result error';
+    testResult.innerHTML = `
+      ❌ <strong>请求失败</strong><br>
+      错误: ${error.message}<br>
+      <small>请确保 proxy.js 已启动 (node proxy.js)</small>
+    `;
+  } finally {
+    testBtn.disabled = false;
+    testBtn.innerHTML = '🔌 测试 API 连接';
+  }
 }
 
 function setupDragDrop() {
@@ -1304,14 +1402,18 @@ function removeFile(index) {
 
 function saveConfig() {
   const apiKey = document.getElementById('apiKey').value.trim();
-  const model = document.getElementById('modelSelect').value;
+  const provider = document.getElementById('providerSelect').value;
+  // 使用提供商默认模型，无需用户选择
+  const model = PROVIDER_DEFAULT_MODELS[provider] || 'doubao-seed-2-0-code';
   if (!apiKey) {
     alert('请输入API密钥');
     return;
   }
   config.apiKey = apiKey;
+  config.provider = provider;
   config.model = model;
   localStorage.setItem('apiKey', apiKey);
+  localStorage.setItem('provider', provider);
   localStorage.setItem('model', model);
   updateStepStatus(0, 'completed');
   enableStep(1);
@@ -1839,7 +1941,7 @@ ${hasRealMembers ? `9. 项目时间表的人员分工表格必须使用上面提
 }
 
 async function callLLM(messages, maxTokens = 3000) {
-  const response = await fetch('http://localhost:3000/proxy', {
+  const response = await fetch('http://localhost:3000/api/chat', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -1847,7 +1949,6 @@ async function callLLM(messages, maxTokens = 3000) {
     body: JSON.stringify({
       apiKey: config.apiKey,
       model: config.model,
-      max_tokens: maxTokens,
       messages: messages
     })
   });
@@ -1918,6 +2019,11 @@ async function downloadDocx(type) {
     a.click();
     URL.revokeObjectURL(url);
     btn.textContent = '已下载';
+    
+    // 保存到历史记录
+    const softwareName = extractedInfo.software_name || extractedInfo.name || '未命名项目';
+    saveToHistory(softwareName);
+    
     setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 2000);
   } catch(e) {
     alert('下载失败：' + e.message + '（请确认 proxy.js 正在运行）');
@@ -1962,7 +2068,104 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// ── 历史记录管理 ─────────────────────────────────────────────
+
+const HISTORY_KEY = 'miaozhu_generated_history';
+const MAX_HISTORY = 5;
+
+function saveToHistory(softwareName) {
+  const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+  const timestamp = new Date().toISOString();
+  
+  // 检查是否已存在相同名称的项目
+  const existingIndex = history.findIndex(h => h.softwareName === softwareName);
+  if (existingIndex >= 0) {
+    // 更新时间戳
+    history[existingIndex].timestamp = timestamp;
+    // 移动到最前面
+    const item = history.splice(existingIndex, 1)[0];
+    history.unshift(item);
+  } else {
+    // 添加新记录
+    history.unshift({ softwareName, timestamp, overview: results[0], design: results[1], extractedInfo: { ...extractedInfo } });
+    // 限制数量
+    if (history.length > MAX_HISTORY) {
+      history.pop();
+    }
+  }
+  
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  renderHistory();
+}
+
+function renderHistory() {
+  const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+  const section = document.getElementById('historySection');
+  const list = document.getElementById('historyList');
+  
+  if (history.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+  
+  section.style.display = 'block';
+  list.innerHTML = history.map((item, index) => `
+    <div class="history-item" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: white; border-radius: 8px; border: 1px solid var(--color-wood); transition: all 0.2s ease;">
+      <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;">
+        <span style="font-size: 20px;">📄</span>
+        <div style="min-width: 0;">
+          <div style="font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(item.softwareName || '未命名项目')}</div>
+          <div style="font-size: 12px; color: var(--text-muted);">${formatHistoryTime(item.timestamp)}</div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 8px; flex-shrink: 0;">
+        <button class="btn btn-small" onclick="downloadHistoryDocx(${index}, 'overview')" style="padding: 6px 12px; font-size: 12px;">软件概述</button>
+        <button class="btn btn-small" onclick="downloadHistoryDocx(${index}, 'design')" style="padding: 6px 12px; font-size: 12px;">设计说明书</button>
+        <button class="btn btn-small btn-danger" onclick="deleteHistoryItem(${index})" style="padding: 6px 10px; font-size: 12px; background: transparent; color: var(--color-clay);">×</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function formatHistoryTime(timestamp) {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diff = now - date;
+  
+  if (diff < 60000) return '刚刚';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
+  if (diff < 604800000) return `${Math.floor(diff / 86400000)}天前`;
+  
+  return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+async function downloadHistoryDocx(index, type) {
+  const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+  const item = history[index];
+  if (!item) return;
+  
+  // 恢复全局状态
+  results[0] = item.overview;
+  results[1] = item.design;
+  Object.assign(extractedInfo, item.extractedInfo);
+  
+  // 调用下载函数
+  await downloadDocx(type);
+}
+
+function deleteHistoryItem(index) {
+  if (!confirm('确定要删除这个记录吗？')) return;
+  
+  const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+  history.splice(index, 1);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  renderHistory();
+}
+
+// 初始化时渲染历史记录
 init();
+renderHistory();
 </script>
 </body>
 </html>
