@@ -1719,6 +1719,9 @@ function init() {
   renderHistory();
   showSecurityTip();
   updateModelForProvider();
+  document.getElementById('pasteText').addEventListener('input', function() {
+    document.getElementById('processBtn').disabled = uploadedFiles.length === 0 && !this.value.trim();
+  });
 }
 
 function showSecurityTip() {
@@ -1863,7 +1866,7 @@ function handleFiles(files) {
     }
   }
   renderFileList();
-  document.getElementById('processBtn').disabled = uploadedFiles.length === 0;
+  document.getElementById('processBtn').disabled = uploadedFiles.length === 0 && !document.getElementById('pasteText').value.trim();
 }
 
 function renderFileList() {
@@ -1891,7 +1894,7 @@ function formatSize(bytes) {
 function removeFile(index) {
   uploadedFiles.splice(index, 1);
   renderFileList();
-  document.getElementById('processBtn').disabled = uploadedFiles.length === 0;
+  document.getElementById('processBtn').disabled = uploadedFiles.length === 0 && !document.getElementById('pasteText').value.trim();
 }
 
 function saveConfig() {

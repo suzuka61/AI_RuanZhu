@@ -18,7 +18,8 @@
     "png-to-icns": "^1.0.0"
   },
   "dependencies": {
-    "docx": "^7.1.0"
+    "docx": "^7.1.0",
+    "pptxgenjs": "^4.0.1"
   },
   "build": {
     "appId": "com.miaozhu.app",
