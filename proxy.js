@@ -14,7 +14,7 @@ const HTML_FILE = path.join(__dirname, '秒著.html');
 // ═══════════════════════════════════════════════════════════════
 const PROVIDERS = {
   openrouter: {
-    name: 'OpenRouter (免费)',
+    name: 'Step 3.5 Flash (免费)',
     baseURL: 'openrouter.ai',
     apiPath: '/api/v1/chat/completions',
     headers: (apiKey) => ({
@@ -29,7 +29,7 @@ const PROVIDERS = {
     }),
     testModel: 'stepfun/step-3.5-flash:free',
     isFree: true,
-    defaultApiKey: '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'
+    defaultApiKey: ''
   },
 
   volcengine: {
@@ -433,13 +433,16 @@ function makeImagePara(imgObj, caption) {
 }
 
 function makeDocHeader(titleText) {
-  const { Header, Paragraph, TextRun, TabStopPosition, TabStopType, PageNumber } = require('docx');
+  const { Header, Paragraph, TextRun, TabStopType, TabStopPosition, PageNumber, AlignmentType } = require('docx');
 
   return new Header({
     children: [
       new Paragraph({
         tabStops: [
-          { type: TabStopType.RIGHT, position: TabStopPosition.MAX }
+          {
+            type: TabStopType.RIGHT,
+            position: 9350,
+          }
         ],
         children: [
           new TextRun({ 
@@ -447,12 +450,12 @@ function makeDocHeader(titleText) {
             size: 18, 
             font: '宋体'
           }),
-          new TextRun({ text: '\t', size: 18, font: '宋体' }),
-          new TextRun({ text: '第', size: 18, font: '宋体' }),
+          new TextRun({ text: '\t' }),
+          new TextRun({ text: '第 ', size: 18, font: '宋体' }),
           new TextRun({ children: [PageNumber.CURRENT], size: 18, font: '宋体' }),
-          new TextRun({ text: '页 共', size: 18, font: '宋体' }),
+          new TextRun({ text: ' 页 共 ', size: 18, font: '宋体' }),
           new TextRun({ children: [PageNumber.TOTAL_PAGES], size: 18, font: '宋体' }),
-          new TextRun({ text: '页', size: 18, font: '宋体' }),
+          new TextRun({ text: ' 页', size: 18, font: '宋体' }),
         ]
       })
     ]
@@ -808,7 +811,7 @@ async function buildDesignDocx(data) {
     return '';
   }
 
-  function matchImagesToPlaceholders(lines, images, archImg) {
+  function matchImagesToPlaceholders(lines, allImages, archImg) {
     const placeholders = [];
     for (let i = 0; i < lines.length; i++) {
       const trimmed = lines[i].trim();
@@ -827,28 +830,24 @@ async function buildDesignDocx(data) {
     const usedImageIndices = new Set();
     const mapping = {};
 
-    let archImgIndex = -1;
-    if (archImg) {
-      archImgIndex = images.findIndex(img => img.name === archImg.name && img.from === archImg.from);
-    }
+    const archImgIndex = archImg ? allImages.findIndex(img => img === archImg) : -1;
 
     for (const ph of placeholders) {
       if (ph.type === '[ARCHITECTURE_IMAGE]' && archImgIndex >= 0) {
-        mapping[ph.lineIndex] = { img: images[archImgIndex], caption: '产品功能架构图' };
+        mapping[ph.lineIndex] = { img: allImages[archImgIndex], caption: '产品功能架构图' };
         usedImageIndices.add(archImgIndex);
       }
     }
 
     const wireframePhs = placeholders.filter(ph => ph.type === '[WIREFRAME]');
-    let wireframeIndex = 0;
 
     for (const ph of wireframePhs) {
       if (!ph.heading) continue;
       
       let bestMatch = { index: -1, similarity: 0 };
-      for (let i = 0; i < images.length; i++) {
+      for (let i = 0; i < allImages.length; i++) {
         if (usedImageIndices.has(i)) continue;
-        const img = images[i];
+        const img = allImages[i];
         if (!img.section) continue;
         
         const sim = textSimilarity(ph.heading, img.section);
@@ -858,7 +857,7 @@ async function buildDesignDocx(data) {
       }
       
       if (bestMatch.index >= 0 && bestMatch.similarity > 0.5) {
-        const img = images[bestMatch.index];
+        const img = allImages[bestMatch.index];
         const caption = img.section ? img.section.replace(/^[\d\.\、\s]+/, '').slice(0, 40) : (ph.heading || '界面示意图');
         mapping[ph.lineIndex] = { img, caption };
         usedImageIndices.add(bestMatch.index);
@@ -868,24 +867,21 @@ async function buildDesignDocx(data) {
     for (const ph of wireframePhs) {
       if (mapping[ph.lineIndex]) continue;
       
-      while (wireframeIndex < images.length && usedImageIndices.has(wireframeIndex)) {
-        wireframeIndex++;
-      }
-      if (wireframeIndex < images.length) {
-        const img = images[wireframeIndex];
+      for (let i = 0; i < allImages.length; i++) {
+        if (usedImageIndices.has(i)) continue;
+        const img = allImages[i];
         const caption = img.section ? img.section.replace(/^[\d\.\、\s]+/, '').slice(0, 40) : (ph.heading || '界面示意图');
         mapping[ph.lineIndex] = { img, caption };
-        usedImageIndices.add(wireframeIndex);
-        wireframeIndex++;
+        usedImageIndices.add(i);
+        break;
       }
     }
 
-    const unmatchedImgs = images.filter((img, idx) => !usedImageIndices.has(idx));
+    const unmatchedImgs = allImages.filter((img, idx) => !usedImageIndices.has(idx));
     return { mapping, unmatchedImgs };
   }
 
   const archImg = images.find(img => img.section && (img.section.includes('架构') || img.section.includes('功能模块') || img.section.includes('产品功能')));
-  const wireframeImgs = images.filter(img => img !== archImg);
 
   function cleanMarkdown(txt) {
     return (txt || '').replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').trim();
@@ -952,9 +948,9 @@ async function buildDesignDocx(data) {
     return { table, endIndex: i };
   }
 
-  function contentToParasWithImages(text, images) {
+  function contentToParasWithImages(text, allImages) {
     const lines = (text||'').split('\n');
-    const { mapping, unmatchedImgs } = matchImagesToPlaceholders(lines, images, archImg);
+    const { mapping, unmatchedImgs } = matchImagesToPlaceholders(lines, allImages, archImg);
     const result = [];
     let skipTocSection = false;
     
@@ -1014,7 +1010,7 @@ async function buildDesignDocx(data) {
     return { paragraphs: result, unmatchedImgs };
   }
 
-  const { paragraphs: requirementChildren, unmatchedImgs } = contentToParasWithImages(aiContent, wireframeImgs);
+  const { paragraphs: requirementChildren, unmatchedImgs } = contentToParasWithImages(aiContent, images);
 
   if (unmatchedImgs.length > 0) {
     requirementChildren.push(makePara(''));
@@ -1118,30 +1114,26 @@ async function buildDesignDocx(data) {
     sections: [
       {
         properties: {
-          ...pageProps,
-          headers: { default: docHeader },
-          footers: { default: emptyHF.footer },
+          page: { size: { width: 11906, height: 16838 }, margin: { top: 1440, right: 1440, bottom: 1440, left: 1800 } }
         },
+        headers: { default: makeDocHeader(softwareName) },
+        footers: { default: makeEmptyFooter() },
         children: coverChildren,
       },
       {
         properties: {
-          ...pageProps,
-          headers: { default: docHeader },
-          footers: { default: emptyHF.footer },
+          page: { size: { width: 11906, height: 16838 }, margin: { top: 1440, right: 1440, bottom: 1440, left: 1800 } }
         },
+        headers: { default: makeDocHeader(softwareName) },
+        footers: { default: makeEmptyFooter() },
         children: tocChildren,
       },
       {
         properties: {
-          ...pageProps,
-          page: {
-            ...pageProps.page,
-            pageNumbers: { start: 1 },
-          },
-          headers: { default: docHeader },
-          footers: { default: emptyHF.footer },
+          page: { size: { width: 11906, height: 16838 }, margin: { top: 1440, right: 1440, bottom: 1440, left: 1800 }, pageNumbers: { start: 1 } }
         },
+        headers: { default: makeDocHeader(softwareName) },
+        footers: { default: makeEmptyFooter() },
         children: requirementChildren,
       },
     ]

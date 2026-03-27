@@ -48,7 +48,7 @@ Node.js 代理 (localhost:3000)
 ### 2.3 支持的API提供商
 | 提供商 | 标识 | 默认模型 | 免费 |
 |--------|------|----------|------|
-| OpenRouter | openrouter | stepfun/step-3.5-flash:free | ✅ |
+| OpenRouter | openrouter | stepfun/step-3.5-flash:free | ✅（需用户注册） |
 | 火山引擎方舟 | volcengine | doubao-seed-2-0-code | ❌ |
 | DeepSeek | deepseek | deepseek-chat | ❌ |
 | 智谱 GLM | zhipu | glm-4.7-thinking | ❌ |
@@ -65,9 +65,9 @@ Node.js 代理 (localhost:3000)
 ## 3. 功能模块
 
 ### 3.1 Step 1 - 配置API
-- 选择API提供商（下拉菜单：OpenRouter免费、火山引擎、DeepSeek、智谱、Kimi、MiniMax）
+- 选择API提供商（下拉菜单：Step 3.5 Flash免费、火山引擎、DeepSeek、智谱、Kimi、MiniMax）
 - 输入对应提供商的API Key（密码输入框，本地localStorage持久化）
-  - OpenRouter免费模型：无需输入API Key，系统内置免费密钥
+  - Step 3.5 Flash免费模型：需输入在OpenRouter注册的API Key
 - 系统自动使用提供商的默认模型，无需手动选择
 - 保存后自动跳转下一步
 - API Key和提供商选择持久化存储，下次打开自动恢复
@@ -286,7 +286,7 @@ Step 4: AI生成两份文档 → 预览 → 下载.docx
 | 版本 | 日期 | 变更内容 |
 |------|------|----------|
 | v1.7 | 2026-03-26 | **合规提示**：在首页、README、PRD中添加免责声明，明确仅供学习参考，生成文档需人工核对 |
-| v1.6 | 2026-03-26 | **新增免费模型**：OpenRouter免费模型，内置API Key，无需配置；**流式输出**：实时预览生成内容，3行滚动显示，降低等待焦虑；**UI优化**：预估时间显示、步骤扩展到4个、字数统计 |
+| v1.6 | 2026-03-26 | **新增免费模型**：Step 3.5 Flash免费模型，用户需注册OpenRouter获取API Key；**流式输出**：实时预览生成内容，3行滚动显示，降低等待焦虑；**UI优化**：预估时间显示、步骤扩展到4个、字数统计 |
 | v1.5 | 2026-03-25 | **UI布局优化**：API配置区域一行显示（API提供商+API Key+测试连接）；确认信息页面Grid两列布局；**Bug修复**：MiniMax API路径修正、testAPIConnection添加provider存在性检查 |
 | v1.4 | 2026-03-24 | **API提供商选择简化**：移除模型选择，改为只选API提供商（火山、DeepSeek、智谱、Kimi、MiniMax），系统自动使用默认模型；删除零一万物提供商 |
 | v3.3 | 2026-03-24 | 修复Markdown表格转换（兼容前导空格/无分隔线/单行表格，失败时兜底清理管道符）；修复图片匹配（统一全量图片传入、关键词级相似度算法、降低阈值至0.3、顺序分配兜底） |

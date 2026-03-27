@@ -666,22 +666,6 @@ textarea {
   color: var(--color-moss);
 }
 
-.progress-estimated-time {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-  margin-top: var(--space-sm);
-  padding: var(--space-xs) var(--space-sm);
-  background: var(--color-stone);
-  border-radius: var(--radius-md);
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.progress-estimated-time .time-icon {
-  font-size: 14px;
-}
-
 .stream-preview-container {
   margin-top: var(--space-md);
   margin-bottom: var(--space-md);
@@ -753,17 +737,7 @@ textarea {
   font-weight: 500;
 }
 
-.preview-line-middle::after {
-  content: '▌';
-  animation: cursor-blink 1s infinite;
-  color: var(--color-moss);
-  margin-left: 2px;
-}
 
-@keyframes cursor-blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
-}
 
 .results-section {
   margin-top: var(--space-md);
@@ -1235,22 +1209,22 @@ textarea {
         <label>API 设置</label>
         <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
           <select id="providerSelect" onchange="updateModelForProvider()" style="width: 160px; flex-shrink: 0;">
-            <option value="openrouter">OpenRouter (免费)</option>
+            <option value="openrouter">Step 3.5 Flash (免费)</option>
             <option value="volcengine">火山引擎方舟</option>
             <option value="deepseek">DeepSeek</option>
             <option value="zhipu">智谱 GLM</option>
             <option value="moonshot">月之暗面 Kimi</option>
             <option value="minimax">MiniMax</option>
           </select>
-          <input type="password" id="apiKey" placeholder="留空使用内置免费密钥，或输入您自己的密钥" style="flex: 1; min-width: 200px;"/>
+          <input type="password" id="apiKey" placeholder="请输入您的 OpenRouter API 密钥" style="flex: 1; min-width: 200px;"/>
           <button class="btn btn-secondary" onclick="testAPIConnection()" id="testBtn" style="flex-shrink: 0; padding: 16px 20px; font-size: 13px;">
             测试连接
           </button>
         </div>
         <div id="freeModelTip" style="margin-top: 8px; font-size: 12px; color: var(--color-moss); line-height: 1.6;">
           ✨ <strong>免费模型说明：</strong><br>
-          • 密钥框留空 → 自动使用内置免费密钥（推荐新手）<br>
-          • 输入自己的密钥 → 使用您在 OpenRouter 注册的 API 密钥
+          • Step 3.5 Flash 完全免费<br>
+          • 推荐注册 OpenRouter 获取免费密钥：<a href="https://openrouter.ai/stepfun/step-3.5-flash:free/api" target="_blank">点击获取</a>
         </div>
       </div>
       <div id="testResult" class="test-result" style="display: none;"></div>
@@ -1322,17 +1296,13 @@ textarea {
         <div class="progress-bar-container">
           <div class="progress-bar" id="genProgressBar"></div>
         </div>
-        <div class="progress-estimated-time" id="genEstimatedTime" style="display: none;">
-          <span class="time-icon">⏱️</span>
-          <span class="time-text">预计剩余时间：约 <span id="genRemainingTime">1</span> 分钟</span>
-        </div>
         
         <!-- 实时预览区域 -->
         <div class="stream-preview-container" id="streamPreviewContainer" style="display: none;">
           <div class="stream-preview-header">
             <span class="preview-icon">✨</span>
             <span class="preview-title">实时预览</span>
-            <span class="preview-word-count" id="streamWordCount">0 字</span>
+            <span class="preview-word-count" id="streamWordCount">⏱️ 预计剩余：约 1 分钟</span>
           </div>
           <div class="stream-preview-content" id="streamPreviewContent">
             <div class="preview-line preview-line-top" id="previewLineTop"></div>
@@ -1425,7 +1395,6 @@ const PROVIDER_DEFAULT_MODELS = {
 };
 
 const PROVIDER_FREE_KEYS = {
-  openrouter: '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'
 };
 
 const INFO_FIELDS_CORE = [
@@ -1785,20 +1754,12 @@ function updateModelForProvider() {
   
   const apiKeyInput = document.getElementById('apiKey');
   const freeTip = document.getElementById('freeModelTip');
-  
-  if (PROVIDER_FREE_KEYS[provider]) {
-    apiKeyInput.placeholder = '留空使用内置免费密钥，或输入您自己的密钥';
-    apiKeyInput.disabled = false;
-    apiKeyInput.style.opacity = '1';
-    apiKeyInput.style.backgroundColor = '';
-    if (freeTip) freeTip.style.display = 'block';
-  } else {
-    apiKeyInput.placeholder = '请输入您的 API 密钥（必填）';
-    apiKeyInput.disabled = false;
-    apiKeyInput.style.opacity = '1';
-    apiKeyInput.style.backgroundColor = '';
-    if (freeTip) freeTip.style.display = 'none';
-  }
+
+  apiKeyInput.placeholder = '请输入您的 OpenRouter API 密钥（必填）';
+  apiKeyInput.disabled = false;
+  apiKeyInput.style.opacity = '1';
+  apiKeyInput.style.backgroundColor = '';
+  if (freeTip) freeTip.style.display = 'block';
 }
 
 async function testAPIConnection() {
@@ -2320,7 +2281,6 @@ async function generateAll() {
   document.getElementById('genProgress').style.display = 'block';
   document.getElementById('resultsSection').style.display = 'none';
   
-  document.getElementById('genEstimatedTime').style.display = 'flex';
   document.getElementById('streamPreviewContainer').style.display = 'block';
   
   const tasks = [
@@ -2328,30 +2288,25 @@ async function generateAll() {
     { label: '设计说明书', pct: 75, fn: genDesignSpec, idx: 1, stepId: 'gps-1', estimatedMinutes: 5 },
   ];
   
-  let totalElapsed = 0;
-  const startTime = Date.now();
   let remainingTimeInterval = null;
   
-  // 更新预估剩余时间的函数
   const updateRemainingTime = () => {
     const tasksRemaining = tasks.length - i;
     let estimatedRemaining = 0;
     for (let j = i; j < tasks.length; j++) {
       estimatedRemaining += tasks[j].estimatedMinutes;
     }
-    // 加上当前任务的剩余时间（按比例估算）
     if (i < tasks.length && currentTaskElapsed > 0) {
-      const currentTaskEstimated = tasks[i].estimatedMinutes * 60; // 转换为秒
+      const currentTaskEstimated = tasks[i].estimatedMinutes * 60;
       const currentTaskProgress = Math.min(currentTaskElapsed / currentTaskEstimated, 1);
       estimatedRemaining = Math.ceil((tasksRemaining - 1) * 2 + (1 - currentTaskProgress) * tasks[i].estimatedMinutes);
     } else {
       estimatedRemaining = Math.ceil(tasksRemaining * 3);
     }
     estimatedRemaining = Math.max(estimatedRemaining, 1);
-    document.getElementById('genRemainingTime').textContent = estimatedRemaining;
+    document.getElementById('streamWordCount').textContent = `⏱️ 预计剩余：约 ${estimatedRemaining} 分钟`;
   };
   
-  // 启动定时器更新预估时间
   remainingTimeInterval = setInterval(updateRemainingTime, 3000);
   
   let i = 0;
@@ -2378,9 +2333,6 @@ async function generateAll() {
         results[t.idx] = `【生成失败】${e.message}`;
       }
       
-      const taskElapsed = (Date.now() - currentTaskStartTime) / 1000;
-      totalElapsed += taskElapsed;
-      
       updateProgressStep('gps', i, 'completed');
       document.getElementById(`resultContent${t.idx}`).textContent = results[t.idx];
       
@@ -2396,7 +2348,6 @@ async function generateAll() {
     updateProgressBar('genProgressBar', 100);
     updateStepStatus(3, 'completed');
     
-    document.getElementById('genEstimatedTime').style.display = 'none';
     document.getElementById('streamPreviewContainer').style.display = 'none';
     
     setTimeout(() => {
@@ -2670,7 +2621,6 @@ function updateStreamPreview(content, wordCount) {
   const topLine = document.getElementById('previewLineTop');
   const middleLine = document.getElementById('previewLineMiddle');
   const bottomLine = document.getElementById('previewLineBottom');
-  const wordCountEl = document.getElementById('streamWordCount');
   
   if (lines.length >= 3) {
     topLine.textContent = lines[lines.length - 3].substring(0, 50);
@@ -2691,8 +2641,6 @@ function updateStreamPreview(content, wordCount) {
     middleLine.textContent = chunks[1] || chunks[0] || '';
     bottomLine.textContent = chunks[2] || chunks[1] || '';
   }
-  
-  wordCountEl.textContent = `${wordCount} 字`;
 }
 
 function showResultTab(idx) {
