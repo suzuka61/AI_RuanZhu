@@ -120,7 +120,7 @@ npm run build:linux
 2. 点击"测试连接"验证
 3. 点击"保存并继续"
 
-![首页]([图片说明/1.首页.png](https://github.com/suzuka61/AI-MiaoZhu/blob/master/%E8%BD%AF%E4%BB%B6%E7%95%8C%E9%9D%A2/1.%E9%A6%96%E9%A1%B5.jpg?raw=true))
+![首页](软件界面/1.首页.jpg)
 
 ### 第二步：上传文件
 1. 上传项目文档（支持.doc, .docx, .pdf）
