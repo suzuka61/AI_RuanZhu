@@ -6,7 +6,7 @@
 
 ## ✨ 主要功能
 
-- 🆓 **免费模型**：Step 3.5 Flash 完全免费，无需配置API Key
+- 🆓 **免费模型**：Step 3.5 Flash 完全免费
 - 🤖 多AI模型支持（火山引擎、DeepSeek、智谱GLM、Kimi、MiniMax）
 - 📄 自动提取文档信息
 - 📝 生成规范的软著申请材料
