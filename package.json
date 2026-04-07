@@ -13,12 +13,13 @@
   "author": "Your Name",
   "license": "MIT",
   "devDependencies": {
+    "docx": "^9.6.1",
     "electron": "^28.0.0",
     "electron-builder": "^24.9.1",
-    "png-to-icns": "^1.0.0"
+    "png-to-icns": "^1.0.0",
+    "to-ico": "^1.1.5"
   },
   "dependencies": {
-    "docx": "^7.1.0",
     "pptxgenjs": "^4.0.1"
   },
   "build": {
