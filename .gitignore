@@ -9,3 +9,4 @@ dist/
 !icon.png
 test-*.js
 测试*.docx
+*产品介绍*.docx
